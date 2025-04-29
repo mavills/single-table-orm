@@ -1,8 +1,8 @@
 from contextlib import contextmanager
 import string
 from typing import Self
-from base import connection
-from base.models import Model
+from . import connection
+from .models import Model
 
 
 class JsonataFormatter:
@@ -78,4 +78,4 @@ class JsonataFormatter:
                 new_value = self.convert_string(value, self.jsonata_values)
             formatted_data[key] = new_value
 
-        return formatted_data
+        return formatted_data 

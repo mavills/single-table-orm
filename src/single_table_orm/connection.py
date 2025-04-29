@@ -74,4 +74,4 @@ class ConnectionManager:
 
 
 # Singleton instance
-table = ConnectionManager()
+table = ConnectionManager() 

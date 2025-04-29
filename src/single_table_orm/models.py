@@ -3,8 +3,8 @@ import string
 from typing import Self
 from boto3.dynamodb.types import TypeSerializer, TypeDeserializer
 
-from base import connection
-from base.fields import Field
+from . import connection
+from .fields import Field
 from botocore.exceptions import ClientError
 
 
@@ -34,7 +34,7 @@ class MissingRequiredFields(Exception):
 
 class F:
     def __init__(self, field: str):
-        self.query = f"{field}"
+        self.query = f"#{field}"
         self.names = {
             f"#{field}": field,
         }
@@ -249,20 +249,19 @@ class ModelMeta(type):
         dct["_pk_attributes"] = pk_attributes
         dct["_sk_attributes"] = sk_attributes
         dct["_gsi_attributes"] = gsi_attributes
-        if "objects" not in dct:
-            dct["objects"] = ModelManager(None)  # Placeholder, updated later
+        dct["objects"] = ModelManager(model=None)  # Placeholder, set later
+
+        # Automatically assign ModelManager to the class
         new_class = super().__new__(cls, name, bases, dct)
-        # Link the manager to the model class
-        new_class.objects.model = new_class
+        new_class.objects = ModelManager(model=new_class)
+
         return new_class
 
     def __call__(cls, *args, **kwargs):
         instance = super().__call__(*args, **kwargs)
-
-        # Validate required fields
-        # for name, field in cls._fields.items():
-        #     if field.required and not hasattr(instance, name):
-        #         raise ValueError(f"Field '{name}' is required but was not provided.")
+        # We need to trigger the __set__ methods for provided fields
+        for key, value in kwargs.items():
+            setattr(instance, key, value)
         return instance
 
 
@@ -270,310 +269,343 @@ class Model(metaclass=ModelMeta):
     objects: ModelManager
 
     def __init__(self, *_, **kwargs):
-        for name, field in self._fields.items():
-            setattr(self, name, kwargs.get(name, None))
+        pass
 
     class Meta:
         suffix = None
 
     @classmethod
     def _get_suffix(cls):
-        """
-        Get the suffix that appears after the primary key in the key string.
-        """
-        if cls.Meta.suffix:
-            return cls.Meta.suffix
-        return cls.__name__
+        suffix = getattr(cls.Meta, "suffix", None)
+        if suffix is None:
+            return cls.__name__.upper()
+        else:
+            return suffix.upper()
 
     def _is_key_valid(self, keys):
-        """
-        Check if all keys are set.
-        """
-        return all(getattr(self, key) is not None for key in keys)
+        for key in keys:
+            if getattr(self, key) is None:
+                return False
+        return True
 
     def _get_key_string(self, keys, with_suffix):
         """
         Get the key string for the given keys.
-        Append suffix to the key string if with_suffix is True.
         """
-        result = []
+        suffix = self._get_suffix()
+        key_parts = []
+        if with_suffix:
+            key_parts.append(suffix)
         for key in keys:
-            field: Field = self._fields[key]
-            result.append(field.identifier)
-            result.append(getattr(self, key))
-        return "#".join(
-            [r for r in result if r] + ([self._get_suffix()] if with_suffix else [])
-        )
+            identifier = self._fields[key].identifier
+            value = str(getattr(self, key))
+            key_parts.append(f"{identifier}#{value}")
+        if with_suffix:
+            key_parts.append(suffix) # Add suffix at the end for PK/SK
+
+        return "#".join(key_parts)
 
     def get_pk(self) -> str:
         """
-        Get the partition key string.
+        Get the primary key for the model.
+        PK format: Identifier#Value#Identifier#Value#Suffix
         """
         if not self._is_key_valid(self._pk_attributes):
-            raise ValueError("Partition key is not valid.", self._pk_attributes)
+            raise MissingRequiredFields(f"Missing primary key fields: {self._pk_attributes}")
+        # PK has suffix at the end
         return self._get_key_string(self._pk_attributes, with_suffix=True)
 
     def get_sk(self) -> str:
         """
-        Get the sort key string.
+        Get the sort key for the model.
+        SK format: Identifier#Value#Identifier#Value
         """
         if not self._is_key_valid(self._sk_attributes):
-            raise ValueError("Sort key is not valid.", self._sk_attributes)
+            raise MissingRequiredFields(f"Missing sort key fields: {self._sk_attributes}")
+        # SK does not have suffix
         return self._get_key_string(self._sk_attributes, with_suffix=False)
 
     def get_gsi1pk(self) -> str | None:
         """
-        Get the GSI1 partition key string.
+        Get the GSI1PK for the model.
+        GSI1PK format: Identifier#Value#Identifier#Value#Suffix
         """
-        if len(self._gsi_attributes) == 0:
+        if not self._gsi_attributes:
             return None
         if not self._is_key_valid(self._gsi_attributes):
-            raise ValueError("GSI key is not valid.", self._gsi_attributes)
+            # If GSI keys are not set, it's okay, return None
+            return None
+        # GSI1PK has suffix at the end
         return self._get_key_string(self._gsi_attributes, with_suffix=True)
 
     def save(self, allow_override=True) -> None:
         """
-        Saves the object to the database.
-        All fields must be set.
+        Save the object to the database.
 
-        Optionally checks if the object already exists and prevents an override.
+        By default, this will override any existing object with the same keys.
+        If you want to prevent this, set `allow_override` to False.
         """
-        # None of the attributs can be None if the object is to be saved
         if not self.is_creatable():
-            raise MissingRequiredFields()
-        put_fields = self.objects.get_save_query(self, allow_override)
+            raise MissingRequiredFields(
+                f"Missing required fields: {self._fields.keys() - self.__dict__.keys()}"
+            )
+        query = self.objects.get_save_query(self, allow_override)
         try:
-            _ = connection.table.client.put_item(**put_fields)
+            connection.table.client.put_item(**query)
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                if not allow_override:
-                    raise ObjectAlreadyExists()
-                else:
-                    raise e
+                raise ObjectAlreadyExists()
+            else:
+                raise e
 
     def update(self, **kwargs) -> None:
         """
-        Updates the object in the database.
+        Update the object in the database.
         """
-        update_query = self.objects.get_update_query(self, **kwargs)
+        if not self.is_creatable():
+            raise MissingRequiredFields(
+                f"Missing required fields: {self._fields.keys() - self.__dict__.keys()}"
+            )
+        query = self.objects.get_update_query(self, **kwargs)
         try:
-            _ = connection.table.client.update_item(**update_query)
+            connection.table.client.update_item(**query)
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 raise ObjectDoesNotExist()
             else:
-                raise
+                raise e
+        # Update the object itself
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def delete(self) -> None:
         """
-        Deletes the object from the database.
+        Delete the object from the database.
         """
-        delete_query = self.objects.get_delete_query(self)
-        connection.table.client.delete_item(**delete_query)
+        query = self.objects.get_delete_query(self)
+        connection.table.client.delete_item(**query)
 
     def is_creatable(self):
         """
-        Check if the object is creatable.
+        Check if the model has all required fields to be created.
 
-        This is true if all fields are set;
-        we don't want missing attributes in the database.
+        Checks:
+        - All PK fields are set
+        - All SK fields are set
+        - All GSI fields are set
+        - All fields are set
         """
-        for name, _ in self._fields.items():
-            # Future extension: add a "required" attribute to the Field class;
-            # this would allow null values in the database.
-            # Usable for migrations etc.
-            if getattr(self, name, None) is None:
-                print(name)
+        try:
+            self.get_pk()
+            self.get_sk()
+            self.get_gsi1pk()
+        except MissingRequiredFields:
+            return False
+
+        for name in self._fields.keys():
+            if name not in self.__dict__:
                 return False
         return True
 
     def to_json(self):
         """
-        Output the model in human-readable JSON format.
+        Convert the model to a JSON object.
         """
         return {name: getattr(self, name) for name in self._fields.keys()}
 
     def __eq__(self, value):
         """
-        Check if two models are equal.
-        Only happens when all fields are equal.
+        Compare two models for equality.
+
+        Two models are considered equal if they have the same type and PK/SK.
         """
         if not isinstance(value, self.__class__):
             return False
-        return all(
-            getattr(self, name) == getattr(value, name) for name in self._fields.keys()
-        )
+        try:
+            return self.get_pk() == value.get_pk() and self.get_sk() == value.get_sk()
+        except MissingRequiredFields:
+            # If keys are missing, they can't be equal
+            return False
 
 
 class QuerySet:
     def __init__(self, model):
+        self.model = model
+        self._filters = {}
+        self._index_name = None
+        self._limit = None
+        self._exclusive_start_key = None
+        self._strong_read = False
+        self._reverse_scan = False
+        self._only_fields = None
+
+        # Keep track of the query execution
+        self._executed = False
+        self._results_cache = None
+        self._current_page = []
+        self._page_index = 0
+        self.last_evaluated_key = None
+
+        # Type serializers
         self.ts = TypeSerializer()
         self.td = TypeDeserializer()
-
-        self.model = model
-
-        # Query building
-        self._using: Model = None
-        self._use_index = False
-        self._consistent = False
-        self._starting_after = False
-        # Pagination limit (external)
-        self._limit = None
-        # Limit the number of items on a single page returned by the API.
-        self._internal_limit = None
-        self._reverse = False
-        self._only = None
-
-        # Query evaluation
-        self._last_page = False
-        self._last_evaluated = None
-        self._current_page_data = []
-        self._current_item_on_page = 0
-        self._evaluated_query = None
 
     def using(self, **kwargs) -> Self:
         """
         Use the provided values to query the database.
+
+        Initiates the queryset, forcing the start of the query.
         """
-        self._using = self.model(**kwargs)
+        self._filters.update(kwargs)
         return self
 
     def use_index(self, use: bool) -> Self:
         """
-        Query the secondary index instead of the primary key.
+        Use the GSI1 index for the query.
         """
-        self._use_index = use
+        self._index_name = "GSI1" if use else None
         return self
 
     def consistent(self, strongly: bool) -> Self:
         """
-        Use strongly consistent reads.
+        Use strongly consistent reads for the query.
         """
-        self._consistent = strongly
+        self._strong_read = strongly
         return self
 
     def limit(self, limit: int) -> Self:
         """
-        Limit the number of items returned by the queryset.
+        Limit the number of results returned by the query.
         """
         self._limit = limit
         return self
 
     def reverse(self) -> Self:
         """
-        Set the order of the queryset to descending
+        Reverse the order of the results.
         """
-        self._reverse = True
+        self._reverse_scan = True
         return self
 
     def only(self, *fields: str) -> Self:
         """
-        Only return the specified fields from the queryset.
+        Return only the specified fields.
         """
-        self._only = fields
+        self._only_fields = fields
         return self
 
     def starting_after(self, start_after: bool) -> Self:
         """
-        Updates the queryset to only start after the SK of the provided object.
+        Start the query after the given key.
 
-        This is useful for external pagination, where the client provides the last item.
-        Internal pagination is handled automatically using LastEvaluatedKey and ExclusiveStartKey.
+        Must be the LastEvaluatedKey of a previous query.
         """
-        self._starting_after = start_after
+        self._exclusive_start_key = start_after
         return self
 
     def get_query(self):
         """
-        Get the Query API operation parameters.
+        Get the query parameters for the Query operation.
         """
-        query = {
-            "TableName": connection.table.table_name,
-        }
-        if not self._use_index:
-            query["KeyConditionExpression"] = "PK = :pk"
-            query["ExpressionAttributeValues"] = {
-                ":pk": self.ts.serialize(self._using.get_pk()),
+        query_model = self.model(**self._filters)
+        if self._index_name == "GSI1":
+            pk_value = query_model.get_gsi1pk()
+            if pk_value is None:
+                raise ValueError("Cannot query GSI1 without GSI fields.")
+            query = {
+                "TableName": connection.table.table_name,
+                "IndexName": "GSI1",
+                "KeyConditionExpression": "GSI1PK = :gsi1pk",
+                "ExpressionAttributeValues": {
+                    ":gsi1pk": self.ts.serialize(pk_value),
+                },
             }
         else:
-            query["IndexName"] = "GSI-1"
-            query["KeyConditionExpression"] = "GSI1PK = :gsi1pk"
-            query["ExpressionAttributeValues"] = {
-                ":gsi1pk": self.ts.serialize(self._using.get_gsi1pk()),
+            pk_value = query_model.get_pk()
+            query = {
+                "TableName": connection.table.table_name,
+                "KeyConditionExpression": "PK = :pk",
+                "ExpressionAttributeValues": {
+                    ":pk": self.ts.serialize(pk_value),
+                },
             }
-        if self._starting_after:
-            query["KeyConditionExpression"] += " AND SK > :sk"
-            query["ExpressionAttributeValues"][":sk"] = self.ts.serialize(
-                self._using.get_sk()
-            )
-        if self._consistent:
+
+        # Optional parameters
+        if self._limit is not None:
+            query["Limit"] = self._limit
+        if self._strong_read:
             query["ConsistentRead"] = True
-        if self._internal_limit:
-            query["Limit"] = self._internal_limit
-        if self._reverse:
+        if self._reverse_scan:
             query["ScanIndexForward"] = False
-        if self._only:
-            query["ProjectionExpression"] = ", ".join(self._only)
+        if self._exclusive_start_key is not None:
+            query["ExclusiveStartKey"] = self._exclusive_start_key
+        if self._only_fields is not None:
+            query["ProjectionExpression"] = ", ".join([f"#{f}" for f in self._only_fields])
+            query["ExpressionAttributeNames"] = {
+                f"#{f}": f for f in self._only_fields
+            }
+
         return query
 
     def __iter__(self):
-        """
-        Initializes the iteration and returns the iterator object.
-        """
-        self._last_page = False
-        self._last_evaluated = None
-        self._current_page_data = []
-        self._current_item_on_page = 0
-        self._total_items = 0
-        self._evaluated_query = self.get_query()
+        if self._results_cache is not None:
+            # If already executed, return the cached results
+            return iter(self._results_cache)
+
+        # Reset pagination state for new iteration
+        self._page_index = 0
+        self._current_page = []
+        self.last_evaluated_key = None
+        self._results_cache = []  # Start building the cache
         return self
 
     def __next__(self):
-        """
-        Fetches the next item from the queryset. Handles pagination under the hood.
-        """
-        # Check if the requested limit has been reached
-        if self._limit is not None and self._total_items >= self._limit:
-            raise StopIteration
-        # Load the next page if no data available, or if the current page is exhausted
-        if self._current_item_on_page >= len(self._current_page_data):
-            if self._last_page:
-                raise StopIteration
-            # Set page data and reset the item counter
-            self._current_page_data = self._fetch_next_page()
-            self._current_item_on_page = 0
+        # If we have items left in the current page buffer, return the next one
+        if self._page_index < len(self._current_page):
+            item = self._current_page[self._page_index]
+            self._page_index += 1
+            self._results_cache.append(item)  # Add to cache
+            return item
 
-        # If no more data is available, stop iteration
-        if len(self._current_page_data) == 0:
+        # If the last query indicated no more pages, stop iteration
+        if self._executed and self.last_evaluated_key is None:
             raise StopIteration
 
-        # Return the next item
-        item = self._current_page_data[self._current_item_on_page]
-        self._current_item_on_page += 1
-        self._total_items += 1
-        return self.model(**item)
+        # Fetch the next page
+        self._current_page = self._fetch_next_page()
+        self._page_index = 0
+
+        # If the new page is empty, stop iteration
+        if not self._current_page:
+            raise StopIteration
+
+        # Return the first item of the new page
+        item = self._current_page[self._page_index]
+        self._page_index += 1
+        self._results_cache.append(item)  # Add to cache
+        return item
 
     def _fetch_next_page(self) -> list:
         """
-        Fetch the next page of the query using the LastEvaluatedKey if available.
+        Fetches the next page of results from DynamoDB.
         """
-        # Set the ExclusiveStartKey if available
-        if self._last_evaluated is not None:
-            self._evaluated_query["ExclusiveStartKey"] = self._last_evaluated
-        else:
-            self._evaluated_query.pop("ExclusiveStartKey", None)
+        query = self.get_query()
+        if self.last_evaluated_key:
+            query["ExclusiveStartKey"] = self.last_evaluated_key
 
-        # Query the database
-        self._response = connection.table.client.query(**self._evaluated_query)
+        result = connection.table.client.query(**query)
+        self._executed = True
+        self.last_evaluated_key = result.get("LastEvaluatedKey")
 
-        # Load last evaluated key
-        if "LastEvaluatedKey" in self._response:
-            self._last_evaluated = self._response["LastEvaluatedKey"]
-        else:
-            self._last_evaluated = None
-            self._last_page = True
-        items = self._response.get("Items", [])
-        return [
-            {key: self.td.deserialize(value) for key, value in item.items()}
-            for item in items
-        ]
+        items = []
+        for item_data in result.get("Items", []):
+            # Deserialize item data
+            deserialized_data = {
+                k: self.td.deserialize(v) for k, v in item_data.items()
+            }
+            # Create model instance, skipping __init__ logic that might re-validate
+            instance = self.model.__new__(self.model)
+            instance.__dict__.update(deserialized_data)
+            items.append(instance)
+
+        return items 

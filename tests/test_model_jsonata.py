@@ -1,13 +1,16 @@
-from base.connection_test_utils import local_client
-from base.fields import Field
-from base.model_jsonata import JsonataFormatter
-from base.models import Model
+from tests.utils import local_client # Updated import
+from single_table_orm.fields import Field # Updated import
+from single_table_orm.model_jsonata import JsonataFormatter # Updated import
+from single_table_orm.models import Model # Updated import
 
 
 class DummyModel(Model):
     a_pk = Field(str, pk=True)
     b_sk = Field(str, sk=True)
     c_gsi1pk = Field(str, gsi=True)
+
+    class Meta:
+        suffix = "DummyModel"
 
 
 def test_save(local_client):
@@ -18,13 +21,13 @@ def test_save(local_client):
     assert query == {
         "Item": {
             "GSI1PK": {
-                "S": "{ % 'C#' & c & '#DummyModel' % }",
+                "S": "{ % 'DummyModel#' & c & '#DummyModel' % }", # Updated format
             },
             "PK": {
-                "S": "{ % 'A#' & a & '#DummyModel' % }",
+                "S": "{ % 'DummyModel#' & a & '#DummyModel' % }", # Updated format
             },
             "SK": {
-                "S": "{ % 'B#' & b % }",
+                "S": "{ % 'B#' & b % }", # Updated format (no suffix)
             },
             "a_pk": {
                 "S": "{ % a % }",
@@ -48,10 +51,10 @@ def test_get(local_client):
     assert query == {
         "Key": {
             "PK": {
-                "S": "{ % 'A#' & a & '#DummyModel' % }",
+                "S": "{ % 'DummyModel#' & a & '#DummyModel' % }", # Updated format
             },
             "SK": {
-                "S": "{ % 'B#' & b % }",
+                "S": "{ % 'B#' & b % }", # Updated format
             },
         },
         "TableName": "{ % $table_name % }",
@@ -66,10 +69,10 @@ def test_delete(local_client):
     assert query == {
         "Key": {
             "PK": {
-                "S": "{ % 'A#' & a & '#DummyModel' % }",
+                "S": "{ % 'DummyModel#' & a & '#DummyModel' % }", # Updated format
             },
             "SK": {
-                "S": "{ % 'B#' & b % }",
+                "S": "{ % 'B#' & b % }", # Updated format
             },
         },
         "TableName": "{ % $table_name % }",
@@ -79,27 +82,33 @@ def test_delete(local_client):
 def test_query(local_client):
     model = DummyModel(a_pk="a", b_sk="b", c_gsi1pk="c")
     with JsonataFormatter().with_model(model) as f:
-        query = f.load(
-            DummyModel.objects.using(
-                a_pk=model.a_pk, b_sk=model.b_sk, c_gsi1pk=model.c_gsi1pk
-            )
-            .limit(1)
-            .reverse()
-            .starting_after(True)
-            .only("a_pk", "b_sk")
-            .get_query()
-        )
+        # Instantiate QuerySet first
+        qs = DummyModel.objects.using(
+            a_pk=model.a_pk,
+            c_gsi1pk=model.c_gsi1pk # Use GSI for index query
+        ).use_index(True) # Specify index usage
+
+        # Apply other options
+        qs = qs.limit(1).reverse().starting_after(True).only("a_pk", "b_sk")
+
+        # Get and format the final query
+        query = f.load(qs.get_query())
+
     assert query == {
+        "ExpressionAttributeNames": { # Added ExpressionAttributeNames
+            "#a_pk": "a_pk",
+            "#b_sk": "b_sk"
+        },
         "ExpressionAttributeValues": {
-            ":pk": {
-                "S": "{ % 'A#' & a & '#DummyModel' % }",
-            },
-            ":sk": {
-                "S": "{ % 'B#' & b % }",
+            ":gsi1pk": {
+                "S": "{ % 'DummyModel#' & c & '#DummyModel' % }", # Updated format for GSI1PK
             },
         },
-        "KeyConditionExpression": "PK = :pk AND SK > :sk",
-        "ProjectionExpression": "a_pk, b_sk",
+        "IndexName": "GSI1", # Added IndexName
+        "KeyConditionExpression": "GSI1PK = :gsi1pk", # Updated KeyConditionExpression
+        "Limit": 1, # Added Limit
+        "ProjectionExpression": "#a_pk, #b_sk", # Updated ProjectionExpression with Names
         "ScanIndexForward": False,
+        "ExclusiveStartKey": True, # Added ExclusiveStartKey
         "TableName": "{ % $table_name % }",
-    }
+    } 

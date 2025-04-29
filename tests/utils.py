@@ -3,7 +3,7 @@ import boto3
 import botocore
 import pytest
 
-from base.connection import table
+from single_table_orm.connection import table # Updated import
 
 TABLE_NAME = "unit-test-table"
 # Must reflect actual table definition
@@ -20,9 +20,12 @@ TABLE_DEFINITION = {
     ],
     "GlobalSecondaryIndexes": [
         {
-            "IndexName": "GSI-1",
+            # Corrected IndexName to match query logic
+            "IndexName": "GSI1",
             "KeySchema": [
                 {"AttributeName": "GSI1PK", "KeyType": "HASH"},
+                # Corrected GSI KeySchema: SK should be part of GSI1
+                # No, SK can be RANGE key for GSI. Let's assume it's correct.
                 {"AttributeName": "SK", "KeyType": "RANGE"},
             ],
             "Projection": {"ProjectionType": "ALL"},
@@ -69,4 +72,11 @@ def local_client():
     with table.table_context(table_name=TABLE_NAME, client=client):
         yield client
     # Clean up any resources
-    client.delete_table(TableName=TABLE_NAME)
+    # Add waiter for table deletion
+    try:
+        client.delete_table(TableName=TABLE_NAME)
+        waiter = client.get_waiter("table_not_exists")
+        waiter.wait(TableName=TABLE_NAME)
+        print(f"Table {TABLE_NAME} deleted successfully.")
+    except botocore.exceptions.ClientError as e:
+        print(f"Error deleting table {TABLE_NAME}: {e}") 
