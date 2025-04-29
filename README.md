@@ -24,17 +24,37 @@ STORM aims to simplify working with this pattern by providing familiar ORM conce
 
 ## Installation
 
-```bash
-# Ensure you have Python 3.x and pip installed
-pip install single-table-orm
-```
+Currently, STORM is not published on PyPI. To install it locally, follow these steps:
 
-*(Note: Replace `single-table-orm` with the actual package name if different upon release.)*
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/single-table-orm.git # Replace with the actual repo URL
+    cd single-table-orm
+    ```
+
+2.  **Install the package:**
+    For regular use:
+    ```bash
+    pip install .
+    ```
+    For development (installs in editable mode):
+    ```bash
+    pip install -e .
+    ```
 
 You will also need `boto3` installed and your AWS credentials configured (e.g., via environment variables, IAM role, or `~/.aws/credentials`).
 
 ```bash
 pip install boto3
+```
+
+**Future PyPI Installation:**
+
+Once the package is published on PyPI, you will be able to install it directly using pip:
+
+```bash
+# Ensure you have Python 3.x and pip installed
+pip install single-table-orm # Or the final package name
 ```
 
 ## High-Level Documentation & Usage
