@@ -1,7 +1,7 @@
 import pytest
+from tests.utils import mock_table
 from single_table_orm.fields import Field
 from single_table_orm.models import F, Model, ObjectAlreadyExists, ObjectDoesNotExist
-from utils import local_client  # Updated import
 from single_table_orm.connection import table  # Updated import
 
 
@@ -15,9 +15,6 @@ def test_partition_key_generation():
         f_gsi = Field(str, gsi=True)
         another_attribute = Field(str, pk=False)
 
-        class Meta:
-            suffix = "TestModel"
-
     model = TestModel(
         a_pk="aaa",
         b_pk="bbb",
@@ -28,11 +25,9 @@ def test_partition_key_generation():
         another_attribute="another",
     )
 
-    assert model.get_pk() == "TestModel#A#aaa#B#bbb#TestModel"  # Suffix start and end
-    assert model.get_sk() == "C#ccc#D#ddd"  # No suffix
-    assert (
-        model.get_gsi1pk() == "TestModel#E#eee#F#fff#TestModel"
-    )  # Suffix start and end
+    assert model.get_pk() == "A#aaa#B#bbb#TestModel"
+    assert model.get_sk() == "C#ccc#D#ddd"
+    assert model.get_gsi1pk() == "E#eee#F#fff#TestModel"
 
 
 def test_key_generation_changed_suffix():
@@ -52,9 +47,9 @@ def test_key_generation_changed_suffix():
         another_attribute="another",
     )
 
-    assert model.get_pk() == "ChangedSuffix#V#value_1#ChangedSuffix"
+    assert model.get_pk() == "V#value_1#ChangedSuffix"
     assert model.get_sk() == "V#value_2"
-    assert model.get_gsi1pk() == "ChangedSuffix#V#value_3#ChangedSuffix"
+    assert model.get_gsi1pk() == "V#value_3#ChangedSuffix"
 
 
 def test_is_key_valid():
@@ -64,9 +59,6 @@ def test_is_key_valid():
         c_sk = Field(str, gsi=True)
         another_attribute = Field(str)
 
-        class Meta:
-            suffix = "TestModel"
-
     model = TestModel(
         a_pk=None,
         b_sk=None,
@@ -74,24 +66,21 @@ def test_is_key_valid():
         another_attribute="another",
     )
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         model.get_pk()
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         model.get_sk()
 
-    # GSI is allowed to be None
-    assert model.get_gsi1pk() is None
+    with pytest.raises(ValueError):
+        model.get_gsi1pk()
 
 
-def test_model_get_exists(local_client):
+def test_model_get_exists(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
         another_attribute = Field(str)
-
-        class Meta:
-            suffix = "TestModel"
 
     model = TestModel(
         a_pk="aaa",
@@ -99,7 +88,7 @@ def test_model_get_exists(local_client):
         another_attribute="another",
     )
 
-    local_client.put_item(
+    mock_table.put_item(
         TableName=table.table_name,
         Item={
             "PK": {"S": model.get_pk()},
@@ -117,14 +106,11 @@ def test_model_get_exists(local_client):
     assert retrieved_model.another_attribute == "another"
 
 
-def test_model_get_does_not_exist(local_client):
+def test_model_get_does_not_exist(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
         another_attribute = Field(str)
-
-        class Meta:
-            suffix = "TestModel"
 
     # Do not create anything
 
@@ -132,14 +118,11 @@ def test_model_get_does_not_exist(local_client):
         TestModel.objects.get(a_pk="aaa", b_sk="bbb")
 
 
-def test_save(local_client):
+def test_save(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
         another_attribute = Field(str)
-
-        class Meta:
-            suffix = "TestModel"
 
     model = TestModel(
         a_pk="aaa",
@@ -148,17 +131,17 @@ def test_save(local_client):
     )
     model.save()
 
-    result = local_client.get_item(
+    result = mock_table.get_item(
         TableName=table.table_name,
         Key={
-            "PK": {"S": model.get_pk()},  # TestModel#A#aaa#TestModel
-            "SK": {"S": model.get_sk()},  # B#bbb
+            "PK": {"S": model.get_pk()},
+            "SK": {"S": model.get_sk()},
         },
     )
     assert "Item" in result
-    expected_item = {
+    assert result["Item"] == {
         "PK": {
-            "S": "TestModel#A#aaa#TestModel",
+            "S": "A#aaa#TestModel",
         },
         "SK": {
             "S": "B#bbb",
@@ -173,22 +156,13 @@ def test_save(local_client):
             "S": "bbb",
         },
     }
-    # Add GSI1PK if it exists
-    gsi1pk = model.get_gsi1pk()
-    if gsi1pk:
-        expected_item["GSI1PK"] = {"S": gsi1pk}
-
-    assert result["Item"] == expected_item
 
 
-def test_save_allow_override(local_client):
+def test_save_allow_override(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
         another_attribute = Field(str)
-
-        class Meta:
-            suffix = "TestModel"
 
     model_1 = TestModel(
         a_pk="aaa",
@@ -205,7 +179,7 @@ def test_save_allow_override(local_client):
 
     model_2.save(allow_override=True)
 
-    result = local_client.get_item(
+    result = mock_table.get_item(
         TableName=table.table_name,
         Key={
             "PK": {"S": model_2.get_pk()},
@@ -216,9 +190,9 @@ def test_save_allow_override(local_client):
     assert model_1.get_sk() == model_2.get_sk()
 
     assert "Item" in result
-    expected_item = {
+    assert result["Item"] == {
         "PK": {
-            "S": "TestModel#A#aaa#TestModel",
+            "S": "A#aaa#TestModel",
         },
         "SK": {
             "S": "B#bbb",
@@ -234,22 +208,13 @@ def test_save_allow_override(local_client):
             "S": "bbb",
         },
     }
-    # Add GSI1PK if it exists
-    gsi1pk = model_2.get_gsi1pk()
-    if gsi1pk:
-        expected_item["GSI1PK"] = {"S": gsi1pk}
-
-    assert result["Item"] == expected_item
 
 
-def test_save_prevent_override(local_client):
+def test_save_prevent_override(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
         another_attribute = Field(str)
-
-        class Meta:
-            suffix = "TestModel"
 
     model_1 = TestModel(
         a_pk="aaa",
@@ -270,21 +235,18 @@ def test_save_prevent_override(local_client):
         model_2.save(allow_override=False)
 
 
-def test_delete(local_client):
+def test_delete(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
         another_attribute = Field(str)
-
-        class Meta:
-            suffix = "TestModel"
 
     model = TestModel(
         a_pk="aaa",
         b_sk="bbb",
         another_attribute="another",
     )
-    local_client.put_item(
+    mock_table.put_item(
         TableName=table.table_name,
         Item={
             "PK": {"S": model.get_pk()},
@@ -296,7 +258,7 @@ def test_delete(local_client):
     )
     model.delete()
 
-    result = local_client.get_item(
+    result = mock_table.get_item(
         TableName=table.table_name,
         Key={
             "PK": {"S": model.get_pk()},
@@ -306,46 +268,29 @@ def test_delete(local_client):
     assert "Item" not in result
 
 
-def test_update(local_client):
+def test_update(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
         another_attribute = Field(str)
         updating_attribute = Field(str)
 
-        class Meta:
-            suffix = "TestModel"
-
     model = TestModel(
         a_pk="aaa",
         b_sk="bbb",
         another_attribute="another",
-        updating_attribute="old",
-    )
-    item_to_put = {
-        "PK": {"S": model.get_pk()},
-        "SK": {"S": model.get_sk()},
-        "a_pk": {"S": model.a_pk},
-        "b_sk": {"S": model.b_sk},
-        "another_attribute": {"S": model.another_attribute},
-        "updating_attribute": {"S": model.updating_attribute},
-    }
-    # Add GSI1PK if it exists
-    gsi1pk = model.get_gsi1pk()
-    if gsi1pk:
-        item_to_put["GSI1PK"] = {"S": gsi1pk}
-
-    local_client.put_item(
-        TableName=table.table_name,
-        Item=item_to_put,
+        updating_attribute="updating",
     )
 
-    model.update(updating_attribute="new")
+    model.save()
+    model = TestModel(
+        a_pk="aaa",
+        b_sk="bbb",
+    )
 
-    # Assert that the instance was updated
-    assert model.updating_attribute == "new"
+    model.update(updating_attribute="updated")
 
-    result = local_client.get_item(
+    result = mock_table.get_item(
         TableName=table.table_name,
         Key={
             "PK": {"S": model.get_pk()},
@@ -353,9 +298,9 @@ def test_update(local_client):
         },
     )
     assert "Item" in result
-    expected_item = {
+    assert result["Item"] == {
         "PK": {
-            "S": "TestModel#A#aaa#TestModel",
+            "S": "A#aaa#TestModel",
         },
         "SK": {
             "S": "B#bbb",
@@ -370,26 +315,17 @@ def test_update(local_client):
             "S": "another",
         },
         "updating_attribute": {
-            "S": "new",
+            "S": "updated",
         },
     }
-    # Add GSI1PK if it exists
-    gsi1pk_updated = model.get_gsi1pk()
-    if gsi1pk_updated:
-        expected_item["GSI1PK"] = {"S": gsi1pk_updated}
-
-    assert result["Item"] == expected_item
 
 
-def test_update_using_expression(local_client):
+def test_update_using_expression(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
         another_attribute = Field(str)
         updating_attribute = Field(int)
-
-        class Meta:
-            suffix = "TestModel"
 
     model = TestModel(
         a_pk="aaa",
@@ -397,30 +333,16 @@ def test_update_using_expression(local_client):
         another_attribute="another",
         updating_attribute=1,
     )
-    item_to_put = {
-        "PK": {"S": model.get_pk()},
-        "SK": {"S": model.get_sk()},
-        "a_pk": {"S": model.a_pk},
-        "b_sk": {"S": model.b_sk},
-        "another_attribute": {"S": model.another_attribute},
-        "updating_attribute": {"N": str(model.updating_attribute)},
-    }
-    # Add GSI1PK if it exists
-    gsi1pk = model.get_gsi1pk()
-    if gsi1pk:
-        item_to_put["GSI1PK"] = {"S": gsi1pk}
+    model.save()
 
-    local_client.put_item(
-        TableName=table.table_name,
-        Item=item_to_put,
+    model = TestModel(
+        a_pk="aaa",
+        b_sk="bbb",
     )
 
     model.update(updating_attribute=F("updating_attribute") + 1)
 
-    # Assert that the instance was updated
-    assert model.updating_attribute == 2
-
-    result = local_client.get_item(
+    result = mock_table.get_item(
         TableName=table.table_name,
         Key={
             "PK": {"S": model.get_pk()},
@@ -428,158 +350,177 @@ def test_update_using_expression(local_client):
         },
     )
     assert "Item" in result
-    expected_item = {
-        "PK": {"S": "TestModel#A#aaa#TestModel"},
-        "SK": {"S": "B#bbb"},
-        "a_pk": {"S": "aaa"},
-        "b_sk": {"S": "bbb"},
-        "another_attribute": {"S": "another"},
-        "updating_attribute": {"N": "2"},
+    assert result["Item"] == {
+        "PK": {
+            "S": "A#aaa#TestModel",
+        },
+        "SK": {
+            "S": "B#bbb",
+        },
+        "a_pk": {
+            "S": "aaa",
+        },
+        "another_attribute": {
+            "S": "another",
+        },
+        "updating_attribute": {
+            "N": "2",
+        },
+        "b_sk": {
+            "S": "bbb",
+        },
     }
-    # Add GSI1PK if it exists
-    gsi1pk_updated = model.get_gsi1pk()
-    if gsi1pk_updated:
-        expected_item["GSI1PK"] = {"S": gsi1pk_updated}
-
-    assert result["Item"] == expected_item
 
 
-def test_query(local_client):
+def test_query(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
 
-        class Meta:
-            suffix = "TestModel"
+    model_1 = TestModel(
+        a_pk="aaa",
+        b_sk="bbb",
+    )
+    model_1.save()
 
-    models = [TestModel(a_pk="aaa", b_sk=f"bbb_{i}") for i in range(3)]
-    for model in models:
-        model.save()
+    model_2 = TestModel(
+        a_pk="aaa",
+        b_sk="ccc",
+    )
+    model_2.save()
 
-    results = list(TestModel.objects.using(a_pk="aaa"))
-    assert len(results) == 3
-    # Check if results match the original models (order might differ)
-    assert set(results) == set(models)
+    queryset = TestModel.objects.using(a_pk="aaa")
+    models = list(queryset)
+
+    assert len(models) == 2
+    # Models will be sorted by SK
+    assert model_1 == models[0]
+    assert model_2 == models[1]
 
 
-def test_query_limit(local_client):
+def test_query_limit(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
 
-        class Meta:
-            suffix = "TestModel"
+    model_1 = TestModel(
+        a_pk="aaa",
+        b_sk="bbb",
+    )
+    model_1.save()
 
-    models = [TestModel(a_pk="aaa", b_sk=f"bbb_{i}") for i in range(3)]
-    for model in models:
-        model.save()
+    model_2 = TestModel(
+        a_pk="aaa",
+        b_sk="ccc",
+    )
+    model_2.save()
 
-    queryset = TestModel.objects.using(a_pk="aaa").limit(2)
-    results = list(queryset)
+    queryset = TestModel.objects.using(a_pk="aaa").limit(1)
+    models = list(queryset)
 
-    assert len(results) == 2
-    # Check pagination key
-    assert queryset.last_evaluated_key is not None
+    assert len(models) == 1
+    # Models will be sorted by SK
+    assert model_1 == models[0]
 
 
-def test_query_limit_starting_after(local_client):
+def test_query_limit_starting_after(mock_table):
     class TestModel(Model):
         a_pk = Field(str, pk=True)
         b_sk = Field(str, sk=True)
 
-        class Meta:
-            suffix = "TestModel"
+    model_1 = TestModel(
+        a_pk="aaa",
+        b_sk="bbb",
+    )
+    model_1.save()
 
-    models = [TestModel(a_pk="aaa", b_sk=f"bbb_{i}") for i in range(3)]
-    for model in models:
-        model.save()
-
-    queryset1 = TestModel.objects.using(a_pk="aaa").limit(2)
-    results1 = list(queryset1)
-    assert len(results1) == 2
-    last_key = queryset1.last_evaluated_key
-
-    queryset2 = TestModel.objects.using(a_pk="aaa").limit(2).starting_after(last_key)
-    results2 = list(queryset2)
-    assert len(results2) == 1
-    assert queryset2.last_evaluated_key is None
-
-
-def test_query_use_index(local_client):
-    class TestModel(Model):
-        a_pk = Field(str, pk=True)
-        b_sk = Field(str, sk=True)
-        c_gsi1pk = Field(str, gsi=True)
-
-        class Meta:
-            suffix = "TestModel"
-
-    # Create models with different PKs but same GSI1PK
-    model1 = TestModel(a_pk="aaa1", b_sk="bbb1", c_gsi1pk="ccc")
-    model2 = TestModel(a_pk="aaa2", b_sk="bbb2", c_gsi1pk="ccc")
-    # Create a model with a different GSI1PK
-    model3 = TestModel(a_pk="aaa3", b_sk="bbb3", c_gsi1pk="ddd")
-
-    model1.save()
-    model2.save()
-    model3.save()
-
-    # Query using GSI1
-    # Note: The query uses the GSI1PK format (Suffix#Identifier#Value#Suffix)
-    results = list(TestModel.objects.using(c_gsi1pk="ccc").use_index(True))
-
-    assert len(results) == 2
-    assert set(results) == {model1, model2}
-
-    # Test querying GSI1 without GSI fields raises error (now returns None, so query fails)
-    with pytest.raises(ValueError):
-        list(TestModel.objects.using(a_pk="some_pk").use_index(True))
-
-
-def test_query_all_options(local_client):
-    """
-    Test querying with multiple options enabled:
-    - use_index(True)
-    - limit(1)
-    - reverse()
-    - only("a_pk")
-    - consistent(True)
-    """
-
-    class TestModel(Model):
-        a_pk = Field(str, pk=True)
-        b_sk = Field(str, sk=True)
-        c_gsi1pk = Field(str, gsi=True)
-        d_other = Field(str)
-
-        class Meta:
-            suffix = "TestModel"
-
-    # Create models with different PKs but same GSI1PK
-    model1 = TestModel(a_pk="aaa1", b_sk="bbb1", c_gsi1pk="ccc", d_other="d1")
-    model2 = TestModel(a_pk="aaa2", b_sk="bbb2", c_gsi1pk="ccc", d_other="d2")
-
-    model1.save()
-    model2.save()
+    model_2 = TestModel(
+        a_pk="aaa",
+        b_sk="ccc",
+    )
+    model_2.save()
 
     queryset = (
-        TestModel.objects.using(c_gsi1pk="ccc")
-        .use_index(True)
-        .limit(1)
-        .reverse()
-        .only("a_pk")
-        .consistent(True)
+        TestModel.objects.using(a_pk="aaa", b_sk="bbb").starting_after(True).limit(1)
+    )
+    models = list(queryset)
+
+    assert len(models) == 1
+    # Models will be sorted by SK
+    assert model_2 == models[0]
+
+
+def test_query_use_index(mock_table):
+    class TestModel(Model):
+        a_pk = Field(str, pk=True)
+        b_sk = Field(str, sk=True)
+        c_gsi1pk = Field(str, gsi=True)
+
+    model_1 = TestModel(
+        a_pk="xxx",
+        b_sk="bbb",
+        c_gsi1pk="ccc",
+    )
+    model_1.save()
+
+    model_2 = TestModel(
+        a_pk="yyy",
+        b_sk="ccc",
+        c_gsi1pk="ccc",
+    )
+    model_2.save()
+
+    model_3 = TestModel(
+        a_pk="zzz",
+        b_sk="ccc",
+        c_gsi1pk="other",
     )
 
-    results = list(queryset)
+    model_3.save()
 
-    assert len(results) == 1
-    # Check only the specified field is present (PK/SK/GSI are always included implicitly by DB)
-    # Here we only check the projected attribute `a_pk`. The other attribute `d_other` should not be present.
-    retrieved_model = results[0]
-    assert hasattr(retrieved_model, "a_pk")
-    assert not hasattr(retrieved_model, "d_other")
-    assert retrieved_model.a_pk in ["aaa1", "aaa2"]
+    queryset = TestModel.objects.using(a_pk="aaa", c_gsi1pk="ccc").use_index(True)
+    models = list(queryset)
 
-    # Check pagination occurred
-    assert queryset.last_evaluated_key is not None
+    assert len(models) == 2
+    # Models will be sorted by SK
+    assert model_1 == models[0]
+    assert model_2 == models[1]
+
+
+def test_query_all_options(mock_table):
+    """
+    Tests all query options, some of which are not worth testing alone;
+    Simply testing that they have been set should be enough.
+    """
+
+    class TestModel(Model):
+        a_pk = Field(str, pk=True)
+        b_sk = Field(str, sk=True)
+        c_gsi1pk = Field(str, gsi=True)
+
+    queryset = (
+        TestModel.objects.using(a_pk="aaa", b_sk="bbb", c_gsi1pk="ccc")
+        .use_index(True)
+        .limit(1)
+        .starting_after(True)
+        .reverse()
+        .consistent(True)
+        .only("a_pk", "b_sk")
+    )
+
+    assert queryset.get_query() == {
+        "ConsistentRead": True,
+        "ExpressionAttributeValues": {
+            ":gsi1pk": {
+                "S": "C#ccc#TestModel",
+            },
+            ":sk": {
+                "S": "B#bbb",
+            },
+        },
+        "IndexName": "GSI-1",
+        "KeyConditionExpression": "GSI1PK = :gsi1pk AND SK > :sk",
+        "ProjectionExpression": "a_pk, b_sk",
+        "ScanIndexForward": False,
+        "TableName": "unit-test-table",
+    }

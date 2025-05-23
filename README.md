@@ -2,6 +2,13 @@
 
 STORM is a Python library providing a Django-like ORM interface for interacting with AWS DynamoDB, specifically designed with the **single-table design** paradigm in mind.
 
+## Project Status
+
+- [x] Basic implementation
+- [x] Testing setup with moto
+- [ ] Make use of the single-table-model to allow querying multiple things at once
+- [ ] Allow pydantic integration, but only optionally
+
 ## Introduction: Single-Table Design
 
 DynamoDB is a highly scalable NoSQL database. Unlike traditional relational databases, it encourages a different approach to data modeling, often favoring a **single-table design**. This involves storing multiple different types of entities (e.g., Users, Orders, Products) within a single DynamoDB table.

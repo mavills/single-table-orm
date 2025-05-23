@@ -2,8 +2,10 @@ import os
 import boto3
 import botocore
 import pytest
+from moto import mock_aws
 
-from single_table_orm.connection import table # Updated import
+from single_table_orm import connection
+from single_table_orm.connection import table  # Updated import
 
 TABLE_NAME = "unit-test-table"
 # Must reflect actual table definition
@@ -21,7 +23,7 @@ TABLE_DEFINITION = {
     "GlobalSecondaryIndexes": [
         {
             # Corrected IndexName to match query logic
-            "IndexName": "GSI1",
+            "IndexName": "GSI-1",
             "KeySchema": [
                 {"AttributeName": "GSI1PK", "KeyType": "HASH"},
                 # Corrected GSI KeySchema: SK should be part of GSI1
@@ -37,6 +39,17 @@ TABLE_DEFINITION = {
     ],
     "ProvisionedThroughput": {"ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
 }
+
+
+@pytest.fixture(scope="function")
+def mock_table():
+    with mock_aws():
+        dynamodb = boto3.client("dynamodb", region_name="us-east-1")
+        dynamodb.create_table(**TABLE_DEFINITION)
+        waiter = dynamodb.get_waiter("table_exists")
+        waiter.wait(TableName=TABLE_NAME)
+        with connection.table.table_context(TABLE_NAME, client=dynamodb):
+            yield dynamodb
 
 
 @pytest.fixture()
@@ -79,4 +92,4 @@ def local_client():
         waiter.wait(TableName=TABLE_NAME)
         print(f"Table {TABLE_NAME} deleted successfully.")
     except botocore.exceptions.ClientError as e:
-        print(f"Error deleting table {TABLE_NAME}: {e}") 
+        print(f"Error deleting table {TABLE_NAME}: {e}")
