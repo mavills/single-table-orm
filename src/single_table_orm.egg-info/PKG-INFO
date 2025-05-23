@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: single-table-orm
-Version: 0.2.0
+Version: 0.2.1
 Summary: A Django-like ORM for AWS DynamoDB using single-table design.
 Author: Stijn De Pauw
 License: MIT License
@@ -34,9 +34,9 @@ Classifier: Topic :: Software Development :: Libraries :: Python Modules
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: boto3==1.35.70
-Requires-Dist: jsonata-python==0.5.2
-Requires-Dist: boto3-stubs[dynamodb]==1.35.70
+Requires-Dist: boto3
+Requires-Dist: jsonata-python
+Requires-Dist: boto3-stubs[dynamodb]
 Dynamic: license-file
 
 # STORM: Single Table ORM for DynamoDB
