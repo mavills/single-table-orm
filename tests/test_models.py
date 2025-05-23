@@ -1,8 +1,8 @@
 import pytest
 from single_table_orm.fields import Field
 from single_table_orm.models import F, Model, ObjectAlreadyExists, ObjectDoesNotExist
-from .utils import local_client  # Updated import
-from single_table_orm.connection import table # Updated import
+from utils import local_client  # Updated import
+from single_table_orm.connection import table  # Updated import
 
 
 def test_partition_key_generation():
@@ -30,7 +30,9 @@ def test_partition_key_generation():
 
     assert model.get_pk() == "TestModel#A#aaa#B#bbb#TestModel"  # Suffix start and end
     assert model.get_sk() == "C#ccc#D#ddd"  # No suffix
-    assert model.get_gsi1pk() == "TestModel#E#eee#F#fff#TestModel" # Suffix start and end
+    assert (
+        model.get_gsi1pk() == "TestModel#E#eee#F#fff#TestModel"
+    )  # Suffix start and end
 
 
 def test_key_generation_changed_suffix():
@@ -149,8 +151,8 @@ def test_save(local_client):
     result = local_client.get_item(
         TableName=table.table_name,
         Key={
-            "PK": {"S": model.get_pk()}, # TestModel#A#aaa#TestModel
-            "SK": {"S": model.get_sk()}, # B#bbb
+            "PK": {"S": model.get_pk()},  # TestModel#A#aaa#TestModel
+            "SK": {"S": model.get_sk()},  # B#bbb
         },
     )
     assert "Item" in result
@@ -450,9 +452,7 @@ def test_query(local_client):
         class Meta:
             suffix = "TestModel"
 
-    models = [
-        TestModel(a_pk="aaa", b_sk=f"bbb_{i}") for i in range(3)
-    ]
+    models = [TestModel(a_pk="aaa", b_sk=f"bbb_{i}") for i in range(3)]
     for model in models:
         model.save()
 
@@ -470,9 +470,7 @@ def test_query_limit(local_client):
         class Meta:
             suffix = "TestModel"
 
-    models = [
-        TestModel(a_pk="aaa", b_sk=f"bbb_{i}") for i in range(3)
-    ]
+    models = [TestModel(a_pk="aaa", b_sk=f"bbb_{i}") for i in range(3)]
     for model in models:
         model.save()
 
@@ -492,9 +490,7 @@ def test_query_limit_starting_after(local_client):
         class Meta:
             suffix = "TestModel"
 
-    models = [
-        TestModel(a_pk="aaa", b_sk=f"bbb_{i}") for i in range(3)
-    ]
+    models = [TestModel(a_pk="aaa", b_sk=f"bbb_{i}") for i in range(3)]
     for model in models:
         model.save()
 
@@ -586,4 +582,4 @@ def test_query_all_options(local_client):
     assert retrieved_model.a_pk in ["aaa1", "aaa2"]
 
     # Check pagination occurred
-    assert queryset.last_evaluated_key is not None 
+    assert queryset.last_evaluated_key is not None

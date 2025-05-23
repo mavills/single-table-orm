@@ -9,11 +9,11 @@ class ConnectionManager:
     Keep track of the current table being used by the connection
     """
 
-    def __init__(self):
+    def __init__(self, table_name: str = None):
         """
         Initialize the connection manager with the default table name
         """
-        self._default_table = os.getenv("DB_TABLE_NAME")
+        self._default_table = table_name
         self._current_table = self._default_table
         self._client = None
 
@@ -74,4 +74,4 @@ class ConnectionManager:
 
 
 # Singleton instance
-table = ConnectionManager() 
+table = ConnectionManager(table_name=os.getenv("DB_TABLE_NAME"))
