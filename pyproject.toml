@@ -18,11 +18,7 @@ classifiers = [
   "Topic :: Database",
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-dependencies = [
-  "boto3==1.35.70",
-  "jsonata-python==0.5.2",
-  "boto3-stubs[dynamodb]==1.35.70",
-]
+dependencies = ["boto3", "jsonata-python", "boto3-stubs[dynamodb]"]
 
 [tool.setuptools]
 package-dir = { "" = "src" }
