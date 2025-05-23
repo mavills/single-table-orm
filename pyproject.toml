@@ -1,3 +1,35 @@
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "single-table-orm"
+version = "0.1.0"
+description = "A Django-like ORM for AWS DynamoDB using single-table design."
+authors = [
+  { name = "Stijn De Pauw" }
+]
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Developers",
+  "Topic :: Database",
+  "Topic :: Software Development :: Libraries :: Python Modules"
+]
+dependencies = [
+  "boto3==1.35.70",
+  "jsonata-python==0.5.2",
+  "boto3-stubs[dynamodb]==1.35.70"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["single_table_orm*"]
+exclude = ["tests*"]

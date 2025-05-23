@@ -1,0 +1,16 @@
+LICENSE
+README.md
+pyproject.toml
+setup.cfg
+src/single_table_orm/__init__.py
+src/single_table_orm/connection.py
+src/single_table_orm/fields.py
+src/single_table_orm/model_jsonata.py
+src/single_table_orm/models.py
+src/single_table_orm.egg-info/PKG-INFO
+src/single_table_orm.egg-info/SOURCES.txt
+src/single_table_orm.egg-info/dependency_links.txt
+src/single_table_orm.egg-info/requires.txt
+src/single_table_orm.egg-info/top_level.txt
+tests/test_model_jsonata.py
+tests/test_models.py
