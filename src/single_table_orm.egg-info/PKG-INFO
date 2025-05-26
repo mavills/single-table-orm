@@ -37,6 +37,7 @@ License-File: LICENSE
 Requires-Dist: boto3
 Requires-Dist: jsonata-python
 Requires-Dist: boto3-stubs[dynamodb]
+Requires-Dist: pydantic
 Dynamic: license-file
 
 # STORM: Single Table ORM for DynamoDB

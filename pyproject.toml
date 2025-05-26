@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "single-table-orm"
-version = "0.2.1"
+version = "0.2.2"
 description = "A Django-like ORM for AWS DynamoDB using single-table design."
 authors = [{ name = "Stijn De Pauw" }]
 license = { file = "LICENSE" }
@@ -18,7 +18,7 @@ classifiers = [
   "Topic :: Database",
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-dependencies = ["boto3", "jsonata-python", "boto3-stubs[dynamodb]"]
+dependencies = ["boto3", "jsonata-python", "boto3-stubs[dynamodb]", "pydantic"]
 
 [tool.setuptools]
 package-dir = { "" = "src" }

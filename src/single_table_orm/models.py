@@ -1,6 +1,6 @@
 import random
 import string
-from typing import Self
+from typing import Generic, Self, Type, TypeVar
 from boto3.dynamodb.types import TypeSerializer, TypeDeserializer
 
 from . import connection
@@ -60,13 +60,16 @@ class F:
         return self
 
 
-class ModelManager:
-    def __init__(self, model):
+MT = TypeVar("MT", bound="Model")
+
+
+class ModelManager(Generic[MT]):
+    def __init__(self, model: Type[MT]):
         self.ts = TypeSerializer()
         self.td = TypeDeserializer()
         self.model = model
 
-    def get_load_query(self, model: "Model") -> None:
+    def get_load_query(self, model: MT) -> None:
         return {
             "TableName": connection.table.table_name,
             "Key": {
@@ -75,8 +78,8 @@ class ModelManager:
             },
         }
 
-    def get(self, **kwargs):
-        model: Model = self.model(**kwargs)
+    def get(self, **kwargs) -> MT:
+        model: MT = self.model(**kwargs)
         query = self.get_load_query(model)
         result = connection.table.client.get_item(**query)
         # If the item does not exist, the "Item" key will not be present
@@ -91,11 +94,11 @@ class ModelManager:
         Explicitly create a new object in the database.
         The object cannot already exist.
         """
-        model: Model = self.model(**kwargs)
+        model: MT = self.model(**kwargs)
         model.save(allow_override=False)
         return model
 
-    def get_save_query(self, model: "Model", allow_override=True) -> dict:
+    def get_save_query(self, model: MT, allow_override=True) -> dict:
         """
         Query to save an object to the database.
         Will be used by the PutItem operation.
@@ -127,7 +130,7 @@ class ModelManager:
 
         return put_fields
 
-    def get_update_query(self, model: "Model", **kwargs) -> None:
+    def get_update_query(self, model: MT, **kwargs) -> None:
         """
         Query to update an object in the database.
 
@@ -174,7 +177,7 @@ class ModelManager:
 
         return update_query
 
-    def get_delete_query(self, model: "Model") -> dict:
+    def get_delete_query(self, model: MT) -> dict:
         """
         Query to delete an object from the database.
         Will be used by the DeleteItem operation.
@@ -191,7 +194,7 @@ class ModelManager:
             },
         }
 
-    def get_primary_query(self, **kwargs) -> list["Model"]:
+    def get_primary_query(self, **kwargs) -> list[MT]:
         """
         Query to get all objects from the database using the default primary keyset.
         Will be used by the Query operation.
@@ -211,7 +214,7 @@ class ModelManager:
         - ScanIndexForward
         - Select
         """
-        model = self.model(**kwargs)
+        model: MT = self.model(**kwargs)
         query = {
             "TableName": connection.table.table_name,
             "KeyConditionExpression": "PK = :pk",
@@ -221,7 +224,7 @@ class ModelManager:
         }
         return query
 
-    def using(self, **kwargs) -> "QuerySet":
+    def using(self, **kwargs) -> "QuerySet[MT]":
         """
         Use the provided values to query the database.
 
@@ -255,7 +258,7 @@ class ModelMeta(type):
         # Automatically assign ModelManager to the class
         new_class = super().__new__(cls, name, bases, dct)
         # link the manager to the model class
-        new_class.objects.model = new_class
+        new_class.objects = ModelManager(model=new_class)
 
         return new_class
 
@@ -268,7 +271,7 @@ class ModelMeta(type):
 
 
 class Model(metaclass=ModelMeta):
-    objects: ModelManager
+    objects: ModelManager[Self]
 
     def __init__(self, *_, **kwargs):
         pass
@@ -411,15 +414,15 @@ class Model(metaclass=ModelMeta):
         )
 
 
-class QuerySet:
-    def __init__(self, model):
+class QuerySet(Generic[MT]):
+    def __init__(self, model: Type[MT]):
         self.ts = TypeSerializer()
         self.td = TypeDeserializer()
 
         self.model = model
 
         # Query building
-        self._using: Model = None
+        self._using: MT = None
         self._use_index = False
         self._consistent = False
         self._starting_after = False
@@ -437,7 +440,7 @@ class QuerySet:
         self._current_item_on_page = 0
         self._evaluated_query = None
 
-    def using(self, **kwargs) -> Self:
+    def using(self, **kwargs) -> "QuerySet[MT]":
         """
         Use the provided values to query the database.
 
