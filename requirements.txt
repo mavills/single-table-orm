@@ -4,3 +4,4 @@ boto3-stubs[dynamodb]==1.35.70
 moto
 pydantic
 build
+twine

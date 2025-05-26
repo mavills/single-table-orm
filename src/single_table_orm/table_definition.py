@@ -1,4 +1,4 @@
-def get_starndard_definition(table_name: str):
+def get_standard_definition(table_name: str):
     return {
         "TableName": table_name,
         "KeySchema": [
