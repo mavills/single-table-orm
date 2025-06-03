@@ -6,11 +6,11 @@ from moto import mock_aws
 
 from single_table_orm import connection
 from single_table_orm.connection import table  # Updated import
-from single_table_orm.table_definition import get_starndard_definition
+from single_table_orm.table_definition import get_standard_definition
 
 TABLE_NAME = "unit-test-table"
 # Must reflect actual table definition
-TABLE_DEFINITION = get_starndard_definition(TABLE_NAME)
+TABLE_DEFINITION = get_standard_definition(TABLE_NAME)
 
 
 @pytest.fixture(scope="function")

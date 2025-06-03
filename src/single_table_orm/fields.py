@@ -1,8 +1,25 @@
+from __future__ import annotations
+
+from typing import (
+    Any, Generic, Optional, TypeVar, overload,
+)
+
 from pydantic import ValidationError
 
 
-class Field:
-    def __init__(self, field_type, pk=False, sk=False, gsi=False, identifier=None):
+T = TypeVar("T")                     # the "real" value that lives in the field
+
+
+class Field(Generic[T]):
+    def __init__(
+        self,
+        field_type: type[Any],
+        *,
+        pk: bool = False,
+        sk: bool = False,
+        gsi: bool = False,
+        identifier: Optional[str] = None,
+    ) -> None:
         """
         A field descriptor for use in models.
 
@@ -19,24 +36,31 @@ class Field:
         self.sk = sk
         self.gsi = gsi
         self.identifier = identifier
-        self.name = None  # Will be set dynamically in the metaclass
+        self.name: Optional[str] = None  # Will be set dynamically in the metaclass
 
-    def __set_name__(self, owner, name: str):
+    def __set_name__(self, owner: type[Any], name: str) -> None:   # noqa: D401
         if self.identifier is None:
             self.identifier = name[0].upper()
         self.name = name
 
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        return instance.__dict__.get(self.name)
+    # --------- the key part ---------
+    @overload
+    def __get__(self, instance: None, owner: type[Any]) -> "Field[T]": ...
+    @overload
+    def __get__(self, instance: Any, owner: type[Any]) -> Optional[T]: ...
+    # --------------------------------
 
-    def __set__(self, instance, value):
+    def __get__(self, instance, owner):
+        if instance is None:               # access through the class
+            return self
+        return instance.__dict__.get(self.name)    # type: ignore[arg-type]
+
+    def __set__(self, instance, value: Optional[T]) -> None:       # type: ignore[override]
         if value is not None:
             try:
                 self.field_type(value)
-            except (TypeError, ValidationError) as e:
-                raise TypeError(f"Invalid value for field '{self.name}': {e}")
-            instance.__dict__[self.name] = value
-        else:
-            instance.__dict__[self.name] = None 
+            except (TypeError, ValidationError) as exc:
+                raise TypeError(
+                    f"Invalid value for field '{self.name}': {exc}"
+                ) from exc
+        instance.__dict__[self.name] = value 

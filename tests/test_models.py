@@ -234,6 +234,24 @@ def test_save_prevent_override(mock_table):
     with pytest.raises(ObjectAlreadyExists):
         model_2.save(allow_override=False)
 
+def test_model_typing(mock_table):
+    class TestModel(Model):
+        a_pk = Field(str, pk=True)
+        b_sk = Field(str, sk=True)
+        another_attribute: Field[dict] = Field(dict)
+
+    model = TestModel(
+        a_pk="aaa",
+        b_sk="bbb",
+        another_attribute={"a": "b"},
+    )
+    model.save()
+    assert model.a_pk == "aaa"
+    assert model.b_sk == "bbb"
+    assert model.another_attribute == {"a": "b"}
+    assert type(model.another_attribute) == dict
+    assert type(TestModel.another_attribute) == Field
+
 
 def test_delete(mock_table):
     class TestModel(Model):

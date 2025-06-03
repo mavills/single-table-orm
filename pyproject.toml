@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "single-table-orm"
-version = "0.2.3"
+version = "0.2.4"
 description = "A Django-like ORM for AWS DynamoDB using single-table design."
 authors = [{ name = "Stijn De Pauw" }]
 license = { file = "LICENSE" }
@@ -27,3 +27,11 @@ package-dir = { "" = "src" }
 where = ["src"]
 include = ["single_table_orm*"]
 exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra -q"
+pythonpath = [
+  "src"
+]
