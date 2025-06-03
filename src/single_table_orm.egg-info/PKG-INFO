@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: single-table-orm
-Version: 0.2.4
+Version: 0.2.5
 Summary: A Django-like ORM for AWS DynamoDB using single-table design.
 Author: Stijn De Pauw
 License: MIT License
