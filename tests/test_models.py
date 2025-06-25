@@ -1,3 +1,4 @@
+import time
 import pytest
 from tests.utils import mock_table
 from single_table_orm.fields import Field
@@ -233,6 +234,7 @@ def test_save_prevent_override(mock_table):
     assert model_1.get_sk() == model_2.get_sk()
     with pytest.raises(ObjectAlreadyExists):
         model_2.save(allow_override=False)
+
 
 def test_model_typing(mock_table):
     class TestModel(Model):
@@ -542,3 +544,24 @@ def test_query_all_options(mock_table):
         "ScanIndexForward": False,
         "TableName": "unit-test-table",
     }
+
+
+def test_store_followed_by_retrieve_correct_types(mock_table):
+    class TestModel(Model):
+        a_pk = Field(str, pk=True)
+        b_sk = Field(str, sk=True)
+        another_attribute: Field[int] = Field(int)
+
+    original_model = TestModel.objects.create(
+        a_pk="aaa",
+        b_sk="bbb",
+        another_attribute=1,
+    )
+    retrieved_model = TestModel.objects.get(a_pk="aaa", b_sk="bbb")
+
+    assert original_model.a_pk == retrieved_model.a_pk
+    assert original_model.b_sk == retrieved_model.b_sk
+    assert original_model.another_attribute == retrieved_model.another_attribute
+    assert isinstance(
+        original_model.another_attribute, type(retrieved_model.another_attribute)
+    )

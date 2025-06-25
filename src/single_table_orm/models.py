@@ -1,3 +1,4 @@
+from copy import deepcopy
 import random
 import string
 from typing import Generic, Self, Type, TypeVar
@@ -32,6 +33,39 @@ class MissingRequiredFields(Exception):
         super().__init__(self.message)
 
 
+ts = TypeSerializer()
+td = TypeDeserializer()
+
+
+def deserialize_with_types(model: Type, item: dict) -> dict:
+    """
+    Deserialize DynamoDB item using the model's field types instead of default deserialization.
+    This ensures proper type conversion (e.g., Decimal to int/float based on field type).
+    """
+    result = {}
+    for key, dynamo_value in item.items():
+        # First deserialize using the default TypeDeserializer
+        raw_value = td.deserialize(dynamo_value)
+
+        # If this field is defined in the model, convert to the correct type
+        if key in model._fields:
+            field = model._fields[key]
+            if raw_value is not None:
+                try:
+                    # Convert to the field's expected type
+                    result[key] = field.field_type(raw_value)
+                except (TypeError, ValueError):
+                    # If conversion fails, keep the raw deserialized value
+                    result[key] = raw_value
+            else:
+                result[key] = None
+        else:
+            # For non-model fields (like PK, SK, GSI1PK), use raw deserialized value
+            result[key] = raw_value
+
+    return result
+
+
 class F:
     def __init__(self, field: str):
         self.query = f"{field}"
@@ -41,7 +75,6 @@ class F:
         self.values = {}
 
     def get_values(self):
-        ts = TypeSerializer()
         serialized = {}
         for key, value in self.values.items():
             serialized[key] = ts.serialize(value)
@@ -65,16 +98,14 @@ MT = TypeVar("MT", bound="Model")
 
 class ModelManager(Generic[MT]):
     def __init__(self, model: Type[MT]):
-        self.ts = TypeSerializer()
-        self.td = TypeDeserializer()
         self.model = model
 
     def get_load_query(self, model: MT) -> None:
         return {
             "TableName": connection.table.table_name,
             "Key": {
-                "PK": self.ts.serialize(model.get_pk()),
-                "SK": self.ts.serialize(model.get_sk()),
+                "PK": ts.serialize(model.get_pk()),
+                "SK": ts.serialize(model.get_sk()),
             },
         }
 
@@ -85,8 +116,11 @@ class ModelManager(Generic[MT]):
         # If the item does not exist, the "Item" key will not be present
         if "Item" not in result:
             raise ObjectDoesNotExist()
-        for name, _ in model._fields.items():
-            setattr(model, name, self.td.deserialize(result["Item"].get(name)))
+
+        # Use type-aware deserialization
+        deserialized_item = deserialize_with_types(model, result["Item"])
+        for name in model._fields.keys():
+            setattr(model, name, deserialized_item.get(name))
         return model
 
     def create(self, **kwargs):
@@ -116,12 +150,12 @@ class ModelManager(Generic[MT]):
         # Item
         item = {}
         for name, _ in model._fields.items():
-            item[name] = self.ts.serialize(getattr(model, name))
-        item["PK"] = self.ts.serialize(model.get_pk())
-        item["SK"] = self.ts.serialize(model.get_sk())
+            item[name] = ts.serialize(getattr(model, name))
+        item["PK"] = ts.serialize(model.get_pk())
+        item["SK"] = ts.serialize(model.get_sk())
         # GSI1PK is allowed to be None
         if model.get_gsi1pk() is not None and "GSI1PK" not in item:
-            item["GSI1PK"] = self.ts.serialize(model.get_gsi1pk())
+            item["GSI1PK"] = ts.serialize(model.get_gsi1pk())
         put_fields["Item"] = item
 
         # ConditionExpression
@@ -150,8 +184,8 @@ class ModelManager(Generic[MT]):
 
         # Key
         update_query["Key"] = {
-            "PK": self.ts.serialize(model.get_pk()),
-            "SK": self.ts.serialize(model.get_sk()),
+            "PK": ts.serialize(model.get_pk()),
+            "SK": ts.serialize(model.get_sk()),
         }
 
         # ConditionExpression
@@ -170,9 +204,7 @@ class ModelManager(Generic[MT]):
                 continue
             expressions.append(f"#{key} = :{key}")
             update_query["ExpressionAttributeNames"][f"#{key}"] = key
-            update_query["ExpressionAttributeValues"][f":{key}"] = self.ts.serialize(
-                value
-            )
+            update_query["ExpressionAttributeValues"][f":{key}"] = ts.serialize(value)
         update_query["UpdateExpression"] = "SET " + ", ".join(expressions)
 
         return update_query
@@ -189,8 +221,8 @@ class ModelManager(Generic[MT]):
         return {
             "TableName": connection.table.table_name,
             "Key": {
-                "PK": self.ts.serialize(model.get_pk()),
-                "SK": self.ts.serialize(model.get_sk()),
+                "PK": ts.serialize(model.get_pk()),
+                "SK": ts.serialize(model.get_sk()),
             },
         }
 
@@ -219,7 +251,7 @@ class ModelManager(Generic[MT]):
             "TableName": connection.table.table_name,
             "KeyConditionExpression": "PK = :pk",
             "ExpressionAttributeValues": {
-                ":pk": self.ts.serialize(model.get_pk()),
+                ":pk": ts.serialize(model.get_pk()),
             },
         }
         return query
@@ -416,9 +448,6 @@ class Model(metaclass=ModelMeta):
 
 class QuerySet(Generic[MT]):
     def __init__(self, model: Type[MT]):
-        self.ts = TypeSerializer()
-        self.td = TypeDeserializer()
-
         self.model = model
 
         # Query building
@@ -509,17 +538,17 @@ class QuerySet(Generic[MT]):
         if not self._use_index:
             query["KeyConditionExpression"] = "PK = :pk"
             query["ExpressionAttributeValues"] = {
-                ":pk": self.ts.serialize(self._using.get_pk()),
+                ":pk": ts.serialize(self._using.get_pk()),
             }
         else:
             query["IndexName"] = "GSI-1"
             query["KeyConditionExpression"] = "GSI1PK = :gsi1pk"
             query["ExpressionAttributeValues"] = {
-                ":gsi1pk": self.ts.serialize(self._using.get_gsi1pk()),
+                ":gsi1pk": ts.serialize(self._using.get_gsi1pk()),
             }
         if self._starting_after:
             query["KeyConditionExpression"] += " AND SK > :sk"
-            query["ExpressionAttributeValues"][":sk"] = self.ts.serialize(
+            query["ExpressionAttributeValues"][":sk"] = ts.serialize(
                 self._using.get_sk()
             )
         if self._consistent:
@@ -591,7 +620,4 @@ class QuerySet(Generic[MT]):
             self._last_evaluated = None
             self._last_page = True
         items = self._response.get("Items", [])
-        return [
-            {key: self.td.deserialize(value) for key, value in item.items()}
-            for item in items
-        ]
+        return [deserialize_with_types(self.model, item) for item in items]

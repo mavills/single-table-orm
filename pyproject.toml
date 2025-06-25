@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "single-table-orm"
-version = "0.2.5"
+version = "0.2.6"
 description = "A Django-like ORM for AWS DynamoDB using single-table design."
 authors = [{ name = "Stijn De Pauw" }]
 license = { file = "LICENSE" }
