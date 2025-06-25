@@ -13,7 +13,7 @@ def get_standard_definition(table_name: str):
         "GlobalSecondaryIndexes": [
             {
                 # Corrected IndexName to match query logic
-                "IndexName": "GSI-1",
+                "IndexName": "GSI1",
                 "KeySchema": [
                     {"AttributeName": "GSI1PK", "KeyType": "HASH"},
                     # Corrected GSI KeySchema: SK should be part of GSI1

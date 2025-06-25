@@ -541,7 +541,7 @@ class QuerySet(Generic[MT]):
                 ":pk": ts.serialize(self._using.get_pk()),
             }
         else:
-            query["IndexName"] = "GSI-1"
+            query["IndexName"] = "GSI1"
             query["KeyConditionExpression"] = "GSI1PK = :gsi1pk"
             query["ExpressionAttributeValues"] = {
                 ":gsi1pk": ts.serialize(self._using.get_gsi1pk()),

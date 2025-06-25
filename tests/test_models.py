@@ -538,7 +538,7 @@ def test_query_all_options(mock_table):
                 "S": "B#bbb",
             },
         },
-        "IndexName": "GSI-1",
+        "IndexName": "GSI1",
         "KeyConditionExpression": "GSI1PK = :gsi1pk AND SK > :sk",
         "ProjectionExpression": "a_pk, b_sk",
         "ScanIndexForward": False,
