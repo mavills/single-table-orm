@@ -258,7 +258,7 @@ class ModelManager(Generic[MT]):
 
     def using(self, **kwargs) -> "QuerySet[MT]":
         """
-        Use the provided values to query the database.
+        Use the provided values to query the database using the primary key(s).
 
         Initiates the queryset, forcing the start of the query.
         """
@@ -471,13 +471,13 @@ class QuerySet(Generic[MT]):
 
     def using(self, **kwargs) -> "QuerySet[MT]":
         """
-        Use the provided values to query the database.
+        Use the provided values to query the database using the primary key(s).
 
         Initiates the queryset, forcing the start of the query.
 
         Example:
         ```python
-        queryset = TestModel.objects.using(a_pk="aaa", b_sk="bbb")
+        queryset = TestModel.objects.using(a_pk="aaa")
         ```
         """
         self._using = self.model(**kwargs)
