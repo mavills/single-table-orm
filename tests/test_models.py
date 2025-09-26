@@ -3,7 +3,7 @@ import pytest
 from tests.utils import mock_table
 from single_table_orm.fields import Field
 from single_table_orm.models import F, Model, ObjectAlreadyExists, ObjectDoesNotExist
-from single_table_orm.connection import table  # Updated import
+from single_table_orm.connection import table
 
 
 def test_partition_key_generation():
